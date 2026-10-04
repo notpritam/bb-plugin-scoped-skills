@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scoped Skills — how a thread gets its skills</title>
+<style>
+  :root {
+    --bg: #0d0e14; --panel: #15161f; --line: #2a2c3a; --text: #e8e8f0; --muted: #9a9bb0;
+    --accent: #7b7cf2; --accent-soft: rgba(123,124,242,.14); --ok: #5fd39a; --no: #8a8b9e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.45 "Inter", "Noto Sans", system-ui, sans-serif; }
+  .frame { width: 1400px; padding: 56px 64px 60px; }
+  h1 { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin-top: 8px; font-size: 16px; }
+  .grid { display: grid; grid-template-columns: 300px 60px 380px 60px 1fr; align-items: center; margin-top: 44px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .box h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .thread { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); margin-top: 10px; font-size: 15px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .dot.claude { background: #e39a6c; }
+  .mono { font-family: "JetBrains Mono", "Noto Sans Mono", ui-monospace, monospace; font-size: 13.5px; }
+  .muted { color: var(--muted); }
+  .arrow { height: 2px; background: linear-gradient(90deg, var(--line), var(--accent)); position: relative; margin: 0 6px; }
+  .arrow::after { content: ""; position: absolute; right: -2px; top: -5px; border: 6px solid transparent; border-left-color: var(--accent); }
+  .core { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--panel); }
+  .call { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #0f1018; border: 1px dashed var(--line); }
+  .lib-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+  .lib-row:first-of-type { border-top: 0; }
+  .scope { font-size: 12.5px; color: var(--muted); }
+  .verdicts { display: flex; gap: 6px; }
+  .v { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .v.ok { color: var(--ok); border-color: rgba(95,211,154,.4); background: rgba(95,211,154,.08); }
+  .v.no { color: var(--no); text-decoration: line-through; }
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; }
+  .result h4 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .pill { font-size: 13px; padding: 4px 10px; border-radius: 8px; background: #1d1f2b; border: 1px solid var(--line); }
+  .pill.scoped { border-color: rgba(123,124,242,.55); background: var(--accent-soft); }
+  .legend { margin-top: 26px; color: var(--muted); font-size: 13.5px; display: flex; gap: 22px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; background: #1d1f2b; border: 1px solid var(--line); }
+  .legend span.s::before { background: var(--accent-soft); border-color: rgba(123,124,242,.55); }
+</style>
+</head>
+<body>
+<div class="frame" id="diagram">
+  <h1>How a BB thread gets its skills with Scoped Skills</h1>
+  <p class="sub">Everything in <span class="mono">~/.bb/skills</span> goes to every thread. Scoped skills go only where their scope matches.</p>
+
+  <div class="grid">
+    <div class="box">
+      <h3>1 · A thread starts</h3>
+      <div class="thread"><span class="dot claude"></span><div><div>Claude Code</div><div class="muted mono">claude-opus-5-5</div></div></div>
+      <div class="thread"><span class="dot"></span><div><div>Codex</div><div class="muted mono">gpt-5.5</div></div></div>
+    </div>
+    <div class="arrow"></div>
+    <div class="box core">
+      <h3>2 · BB resolves the session</h3>
+      <div>For each thread, BB asks every plugin which of <em>its</em> skills to inject.</div>
+      <div class="call mono">bb.agents.configure(ctx)<br><span class="muted">ctx.provider.id · ctx.provider.model</span></div>
+    </div>
+    <div class="arrow"></div>
+    <div class="box">
+      <h3>3 · Scoped Skills checks each scope</h3>
+      <div class="lib-row"><div><div class="mono">brandkit</div><div class="scope">agents: codex</div></div>
+        <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
+      <div class="lib-row"><div><div class="mono">imagegen-frontend-web</div><div class="scope">agents: codex</div></div>
+        <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
+      <div class="lib-row"><div><div class="mono">gpt5-prompting</div><div class="scope">models: gpt-5*</div></div>
+        <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
+      <div class="lib-row"><div><div class="mono">scoped-skills</div><div class="scope">guide · every agent</div></div>
+        <div class="verdicts"><span class="v ok">Claude</span><span class="v ok">Codex</span></div></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="box result">
+      <h4><span class="dot claude"></span>Claude Code session receives</h4>
+      <div class="pills">
+        <span class="pill">local-video-edit</span><span class="pill">hyperframes</span><span class="pill">…every ~/.bb skill</span>
+        <span class="pill scoped">scoped-skills</span>
+      </div>
+    </div>
+    <div class="box result">
+      <h4><span class="dot"></span>Codex session receives</h4>
+      <div class="pills">
+        <span class="pill">local-video-edit</span><span class="pill">hyperframes</span><span class="pill">…every ~/.bb skill</span>
+        <span class="pill scoped">scoped-skills</span><span class="pill scoped">brandkit</span><span class="pill scoped">imagegen-frontend-web</span><span class="pill scoped">gpt5-prompting</span>
+      </div>
+    </div>
+  </div>
+  <div class="legend"><span>Global skill (~/.bb/skills)</span><span class="s">Scoped skill (selected per thread)</span><span>Library stored in the plugin's SQLite database, written to disk on load</span></div>
+</div>
+</body>
+</html>

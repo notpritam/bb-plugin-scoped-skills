@@ -178,7 +178,7 @@ function SkillCard({
         </Button>
       </form>
       <p className="text-[11px] text-muted-foreground">
-        {skill.fileCount} files · {formatBytes(skill.totalBytes)}
+        {skill.fileCount} {skill.fileCount === 1 ? "file" : "files"} · {formatBytes(skill.totalBytes)}
         {skill.source ? ` · from ${skill.source}` : ""}
       </p>
     </li>

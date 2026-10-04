@@ -9,6 +9,8 @@ mislead another. Scoped Skills keeps a library in which every skill carries a
 scope, and gives a thread only the skills whose scope matches its agent and
 model.
 
+![Scoped Skills previewing a Codex thread: image skills included, a GPT-5-only demo skill withheld](docs/screenshots/library-codex.webp)
+
 ## Install
 
 ```sh
@@ -40,6 +42,8 @@ bb scoped-skills remove brandkit
 a thread to check or change a scope.
 
 ## How it works
+
+![How a thread gets its skills with Scoped Skills](docs/architecture.webp)
 
 ```
 thread starts ──► BB asks plugins: "agent = codex, model = gpt-5.5 — which skills?"

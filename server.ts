@@ -362,7 +362,7 @@ export default async function plugin(bb: BbPluginApi) {
       try {
         const skill = await importSkill({ path: folder, agents, models: models ?? null, replace: replace ?? false });
         const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
-        return `Imported ${skill.fileCount} files. ${formatSkill(skill, names).slice(2)}.`;
+        return `Imported ${skill.fileCount} ${skill.fileCount === 1 ? "file" : "files"}. ${formatSkill(skill, names).slice(2)}.`;
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }
@@ -459,7 +459,7 @@ export default async function plugin(bb: BbPluginApi) {
             if (folder === undefined || rest.length !== 1 || agents === undefined || agents === "") break;
             const skill = await importSkill({ path: folder, agents: splitList(agents) ?? null, models: splitList(models) ?? null, replace });
             const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
-            return reply(skill, `Imported ${skill.fileCount} files: ${formatSkill(skill, names).slice(2)}`);
+            return reply(skill, `Imported ${skill.fileCount} ${skill.fileCount === 1 ? "file" : "files"}: ${formatSkill(skill, names).slice(2)}`);
           }
           case "scope": {
             const agents = takeFlag(rest, "--agents");
