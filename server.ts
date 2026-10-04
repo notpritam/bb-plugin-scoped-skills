@@ -22,6 +22,7 @@ import {
   readSkillFolder,
   scopeMatches,
   SkillImportError,
+  type ProjectRef,
   type Scope,
   type SkillFile,
 } from "./core/library.ts";
@@ -34,6 +35,7 @@ const LIBRARY_CHANGED = "library-changed";
 const scopeSchema = z.object({
   agents: z.array(z.string()).nullable(),
   models: z.array(z.string()).nullable(),
+  projects: z.array(z.string()).nullable(),
 });
 
 const skillSummarySchema = z.object({
@@ -50,16 +52,24 @@ export type SkillSummary = z.infer<typeof skillSummarySchema>;
 const agentSchema = z.object({ id: z.string(), name: z.string() });
 export type Agent = z.infer<typeof agentSchema>;
 
+const projectSchema = z.object({ id: z.string(), name: z.string(), gitRemoteUrl: z.string().nullable() });
+export type Project = z.infer<typeof projectSchema>;
+
 export const rpcContract = defineRpcContract({
   library_list: {
     input: z.null(),
-    output: z.object({ skills: z.array(skillSummarySchema), agents: z.array(agentSchema) }),
+    output: z.object({
+      skills: z.array(skillSummarySchema),
+      agents: z.array(agentSchema),
+      projects: z.array(projectSchema),
+    }),
   },
   library_set_scope: {
     input: z.object({
       name: z.string(),
       agents: z.array(z.string()).nullable(),
       models: z.array(z.string()).nullable(),
+      projects: z.array(z.string()).nullable(),
     }),
     output: skillSummarySchema,
   },
@@ -68,6 +78,7 @@ export const rpcContract = defineRpcContract({
       path: z.string().trim().min(1),
       agents: z.array(z.string()).nullable(),
       models: z.array(z.string()).nullable(),
+      projects: z.array(z.string()).nullable(),
       replace: z.boolean(),
     }),
     output: skillSummarySchema,
@@ -77,7 +88,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ removed: z.boolean() }),
   },
   library_preview: {
-    input: z.object({ agent: z.string(), model: z.string() }),
+    input: z.object({ agent: z.string(), model: z.string(), project: z.string().nullable() }),
     output: z.object({ included: z.array(z.string()), excluded: z.array(z.string()) }),
   },
 });
@@ -101,6 +112,7 @@ interface SkillRow {
   description: string;
   agents: string | null;
   models: string | null;
+  projects: string | null;
   source: string | null;
   updated_at: string;
 }
@@ -127,18 +139,24 @@ export default async function plugin(bb: BbPluginApi) {
        executable INTEGER NOT NULL DEFAULT 0,
        PRIMARY KEY (skill, path)
      )`,
+    `ALTER TABLE skills ADD COLUMN projects TEXT`,
   ]);
   db.pragma("foreign_keys = ON");
 
   const parseList = (value: string | null): string[] | null =>
     value === null ? null : (JSON.parse(value) as string[]);
-  const scopeOf = (row: SkillRow): Scope => ({ agents: parseList(row.agents), models: parseList(row.models) });
+  const scopeOf = (row: SkillRow): Scope => ({
+    agents: parseList(row.agents),
+    models: parseList(row.models),
+    projects: parseList(row.projects),
+  });
+  const encodeList = (list: string[] | null) => (list === null ? null : JSON.stringify(list));
 
   /** In-memory scopes for the synchronous configure callback. */
   let scopes = new Map<string, Scope>();
 
   function rows(): SkillRow[] {
-    return db.prepare(`SELECT name, description, agents, models, source, updated_at FROM skills ORDER BY name`).all() as SkillRow[];
+    return db.prepare(`SELECT name, description, agents, models, projects, source, updated_at FROM skills ORDER BY name`).all() as SkillRow[];
   }
 
   function summarize(row: SkillRow): SkillSummary {
@@ -184,6 +202,16 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  async function listProjects(): Promise<Project[]> {
+    try {
+      const projects = await bb.sdk.projects.list({ includePersonal: true });
+      return projects.map((project) => ({ id: project.id, name: project.name, gitRemoteUrl: project.gitRemoteUrl ?? null }));
+    } catch (error) {
+      bb.log.warn(`could not list projects: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }
+
   /** Reject agent ids BB does not know, so a typo cannot hide a skill forever. */
   async function checkAgents(agents: string[] | null): Promise<void> {
     if (agents === null) return;
@@ -199,7 +227,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   function getRow(name: string): SkillRow {
     const row = db
-      .prepare(`SELECT name, description, agents, models, source, updated_at FROM skills WHERE name = ?`)
+      .prepare(`SELECT name, description, agents, models, projects, source, updated_at FROM skills WHERE name = ?`)
       .get(name) as SkillRow | undefined;
     if (row === undefined) throw new SkillImportError(`No scoped skill named "${name}". Run "bb scoped-skills list".`);
     return row;
@@ -209,6 +237,7 @@ export default async function plugin(bb: BbPluginApi) {
     path: string;
     agents: string[] | null;
     models: string[] | null;
+    projects?: string[] | null;
     replace: boolean;
   }): Promise<SkillSummary> {
     const folder = path.resolve(expandHome(input.path));
@@ -218,6 +247,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const agents = normalizeList(input.agents);
     const models = normalizeList(input.models);
+    const projects = normalizeList(input.projects ?? null);
     await checkAgents(agents);
     const exists = db.prepare(`SELECT 1 FROM skills WHERE name = ?`).get(skill.name) !== undefined;
     if (exists && !input.replace) {
@@ -227,12 +257,13 @@ export default async function plugin(bb: BbPluginApi) {
     db.transaction(() => {
       db.prepare(`DELETE FROM skills WHERE name = ?`).run(skill.name);
       db.prepare(
-        `INSERT INTO skills (name, description, agents, models, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO skills (name, description, agents, models, projects, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         skill.name,
         skill.description,
-        agents === null ? null : JSON.stringify(agents),
-        models === null ? null : JSON.stringify(models),
+        encodeList(agents),
+        encodeList(models),
+        encodeList(projects),
         folder,
         now,
         now,
@@ -245,14 +276,21 @@ export default async function plugin(bb: BbPluginApi) {
     return summarize(getRow(skill.name));
   }
 
-  async function setScope(name: string, agentsInput: string[] | null, modelsInput: string[] | null): Promise<SkillSummary> {
+  async function setScope(
+    name: string,
+    agentsInput: string[] | null,
+    modelsInput: string[] | null,
+    projectsInput: string[] | null,
+  ): Promise<SkillSummary> {
     getRow(name);
     const agents = normalizeList(agentsInput);
     const models = normalizeList(modelsInput);
+    const projects = normalizeList(projectsInput);
     await checkAgents(agents);
-    db.prepare(`UPDATE skills SET agents = ?, models = ?, updated_at = ? WHERE name = ?`).run(
-      agents === null ? null : JSON.stringify(agents),
-      models === null ? null : JSON.stringify(models),
+    db.prepare(`UPDATE skills SET agents = ?, models = ?, projects = ?, updated_at = ? WHERE name = ?`).run(
+      encodeList(agents),
+      encodeList(models),
+      encodeList(projects),
       new Date().toISOString(),
       name,
     );
@@ -267,10 +305,10 @@ export default async function plugin(bb: BbPluginApi) {
     return true;
   }
 
-  function preview(agent: string, model: string): { included: string[]; excluded: string[] } {
+  function preview(agent: string, model: string, project: ProjectRef | null): { included: string[]; excluded: string[] } {
     const included: string[] = [];
     const excluded: string[] = [];
-    for (const [name, scope] of scopes) (scopeMatches(scope, agent, model) ? included : excluded).push(name);
+    for (const [name, scope] of scopes) (scopeMatches(scope, agent, model, project) ? included : excluded).push(name);
     return { included, excluded };
   }
 
@@ -280,15 +318,29 @@ export default async function plugin(bb: BbPluginApi) {
   // matches. Must stay synchronous and only name skills that exist on disk.
   bb.agents.configure((context) => ({
     tools: [...TOOL_NAMES],
-    skills: [GUIDE_SKILL, ...preview(context.provider.id, context.provider.model).included],
+    skills: [
+      GUIDE_SKILL,
+      ...preview(context.provider.id, context.provider.model, {
+        id: context.project.id,
+        name: context.project.name,
+        gitRemoteUrl: context.project.gitRemoteUrl,
+      }).included,
+    ],
   }));
 
   bb.rpc.register(rpcContract, {
-    library_list: async () => ({ skills: rows().map(summarize), agents: await listAgents() }),
-    library_set_scope: ({ name, agents, models }) => setScope(name, agents, models),
+    library_list: async () => ({
+      skills: rows().map(summarize),
+      agents: await listAgents(),
+      projects: await listProjects(),
+    }),
+    library_set_scope: ({ name, agents, models, projects }) => setScope(name, agents, models, projects),
     library_import: (input) => importSkill(input),
     library_remove: ({ name }) => ({ removed: removeSkill(name) }),
-    library_preview: ({ agent, model }) => preview(agent, model),
+    library_preview: async ({ agent, model, project }) => {
+      const ref = project === null ? null : ((await listProjects()).find((p) => p.id === project) ?? null);
+      return preview(agent, model, ref);
+    },
   });
 
   // ---- Agent tools -------------------------------------------------------
@@ -296,7 +348,8 @@ export default async function plugin(bb: BbPluginApi) {
   const formatSkill = (skill: SkillSummary, agentNames: Map<string, string>) => {
     const who = skill.scope.agents === null ? "all agents" : skill.scope.agents.map((id) => agentNames.get(id) ?? id).join(", ");
     const models = skill.scope.models === null ? "" : ` · models: ${skill.scope.models.join(", ")}`;
-    return `- ${skill.name} → ${who}${models}`;
+    const projects = skill.scope.projects === null ? "" : ` · projects: ${skill.scope.projects.join(", ")}`;
+    return `- ${skill.name} → ${who}${models}${projects}`;
   };
 
   bb.agents.registerTool({
@@ -329,16 +382,18 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.registerTool({
     name: "scoped_skills_set_scope",
     description:
-      "Change which agents (and optionally which models) receive a scoped skill. Only call this when the user asks to restrict, widen, or move a skill between agents. agents: provider ids such as codex or claude-code, or [\"all\"]. models: optional globs such as gpt-5*.",
+      "Change which agents (and optionally which models and projects) receive a scoped skill. Only call this when the user asks to restrict, widen, or move a skill. agents: provider ids such as codex or claude-code, or [\"all\"]. models: optional globs such as gpt-5*. projects: optional globs matched against a project's id, name or git remote, such as *emergentbase/*. Omitting models or projects keeps the current value.",
     presentation: { label: { pending: "Updating skill scope", completed: "Updated skill scope" } },
     parameters: z.object({
       name: z.string().min(1),
       agents: z.array(z.string().min(1)).min(1),
       models: z.array(z.string().min(1)).optional(),
+      projects: z.array(z.string().min(1)).optional(),
     }),
-    async execute({ name, agents, models }) {
+    async execute({ name, agents, models, projects }) {
       try {
-        const skill = await setScope(name, agents, models ?? null);
+        const current = scopeOf(getRow(name));
+        const skill = await setScope(name, agents, models ?? current.models, projects ?? current.projects);
         const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
         return `Updated. ${formatSkill(skill, names).slice(2)}. New threads pick this up; running sessions keep their skills until restarted.`;
       } catch (error) {
@@ -356,11 +411,18 @@ export default async function plugin(bb: BbPluginApi) {
       path: z.string().min(1),
       agents: z.array(z.string().min(1)).min(1),
       models: z.array(z.string().min(1)).optional(),
+      projects: z.array(z.string().min(1)).optional(),
       replace: z.boolean().optional(),
     }),
-    async execute({ path: folder, agents, models, replace }) {
+    async execute({ path: folder, agents, models, projects, replace }) {
       try {
-        const skill = await importSkill({ path: folder, agents, models: models ?? null, replace: replace ?? false });
+        const skill = await importSkill({
+          path: folder,
+          agents,
+          models: models ?? null,
+          projects: projects ?? null,
+          replace: replace ?? false,
+        });
         const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
         return `Imported ${skill.fileCount} ${skill.fileCount === 1 ? "file" : "files"}. ${formatSkill(skill, names).slice(2)}.`;
       } catch (error) {
@@ -374,14 +436,15 @@ export default async function plugin(bb: BbPluginApi) {
   const usage = [
     "Usage:",
     "  bb scoped-skills list [--json]",
-    "  bb scoped-skills import <folder> --agents <ids|all> [--models <globs>] [--replace] [--json]",
-    "  bb scoped-skills scope <name> --agents <ids|all> [--models <globs|all>] [--json]",
+    "  bb scoped-skills import <folder> --agents <ids|all> [--models <globs>] [--projects <globs>] [--replace] [--json]",
+    "  bb scoped-skills scope <name> --agents <ids|all> [--models <globs|all>] [--projects <globs|all>] [--json]",
     "  bb scoped-skills remove <name> [--json]",
-    "  bb scoped-skills preview --agent <id> [--model <model>] [--json]",
+    "  bb scoped-skills preview --agent <id> [--model <model>] [--project <id|name>] [--json]",
     "  bb scoped-skills agents [--json]",
     "",
     "Agent ids come from `bb scoped-skills agents` (e.g. codex, claude-code).",
-    "Lists are comma-separated. Model globs use * (e.g. gpt-5*).",
+    "Lists are comma-separated. Globs use * (models: gpt-5*; projects match id, name or",
+    "git remote: *emergentbase/*).",
   ].join("\n");
 
   function takeFlag(args: string[], flag: string): string | undefined {
@@ -401,24 +464,24 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.cli.register({
     name: "scoped-skills",
-    summary: "Give skills only to the agents (and models) that can use them",
+    summary: "Give skills only to the agents, models and projects that should have them",
     commands: [
       { name: "list", summary: "List scoped skills and who receives them", usage: "bb scoped-skills list [--json]" },
       {
         name: "import",
         summary: "Copy a skill folder into the library with a scope",
-        usage: "bb scoped-skills import <folder> --agents <ids|all> [--models <globs>] [--replace]",
+        usage: "bb scoped-skills import <folder> --agents <ids|all> [--models <globs>] [--projects <globs>] [--replace]",
       },
       {
         name: "scope",
-        summary: "Change which agents/models receive a skill",
-        usage: "bb scoped-skills scope <name> --agents <ids|all> [--models <globs|all>]",
+        summary: "Change which agents/models/projects receive a skill",
+        usage: "bb scoped-skills scope <name> --agents <ids|all> [--models <globs|all>] [--projects <globs|all>]",
       },
       { name: "remove", summary: "Delete a skill from the library", usage: "bb scoped-skills remove <name>" },
       {
         name: "preview",
-        summary: "Show which scoped skills a thread on an agent/model would get",
-        usage: "bb scoped-skills preview --agent <id> [--model <model>]",
+        summary: "Show which scoped skills a thread on an agent/model/project would get",
+        usage: "bb scoped-skills preview --agent <id> [--model <model>] [--project <id|name>]",
       },
       { name: "agents", summary: "List the agent ids you can scope to", usage: "bb scoped-skills agents" },
     ],
@@ -454,20 +517,33 @@ export default async function plugin(bb: BbPluginApi) {
           case "import": {
             const agents = takeFlag(rest, "--agents");
             const models = takeFlag(rest, "--models");
+            const projects = takeFlag(rest, "--projects");
             const replace = takeBool(rest, "--replace");
             const folder = rest[0];
             if (folder === undefined || rest.length !== 1 || agents === undefined || agents === "") break;
-            const skill = await importSkill({ path: folder, agents: splitList(agents) ?? null, models: splitList(models) ?? null, replace });
+            const skill = await importSkill({
+              path: folder,
+              agents: splitList(agents) ?? null,
+              models: splitList(models) ?? null,
+              projects: splitList(projects) ?? null,
+              replace,
+            });
             const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
             return reply(skill, `Imported ${skill.fileCount} ${skill.fileCount === 1 ? "file" : "files"}: ${formatSkill(skill, names).slice(2)}`);
           }
           case "scope": {
             const agents = takeFlag(rest, "--agents");
             const models = takeFlag(rest, "--models");
+            const projects = takeFlag(rest, "--projects");
             const name = rest[0];
             if (name === undefined || rest.length !== 1 || agents === undefined || agents === "") break;
             const current = scopeOf(getRow(name));
-            const skill = await setScope(name, splitList(agents) ?? null, models === undefined ? current.models : splitList(models) ?? null);
+            const skill = await setScope(
+              name,
+              splitList(agents) ?? null,
+              models === undefined ? current.models : (splitList(models) ?? null),
+              projects === undefined ? current.projects : (splitList(projects) ?? null),
+            );
             const names = new Map((await listAgents()).map((agent) => [agent.id, agent.name]));
             return reply(skill, formatSkill(skill, names).slice(2));
           }
@@ -480,12 +556,19 @@ export default async function plugin(bb: BbPluginApi) {
           case "preview": {
             const agent = takeFlag(rest, "--agent");
             const model = takeFlag(rest, "--model") ?? "";
+            const projectArg = takeFlag(rest, "--project");
             if (agent === undefined || agent === "" || rest.length !== 0) break;
-            const result = preview(agent, model);
+            let project: ProjectRef | null = null;
+            if (projectArg !== undefined && projectArg !== "") {
+              const all = await listProjects();
+              project = all.find((p) => p.id === projectArg || p.name.toLowerCase() === projectArg.toLowerCase()) ?? null;
+              if (project === null) return fail(`No project "${projectArg}". Use a project id or exact name from \`bb project list\`.`);
+            }
+            const result = preview(agent, model, project);
             return reply(
               result,
               [
-                `A ${agent}${model ? ` (${model})` : ""} thread gets: ${result.included.join(", ") || "none"}`,
+                `A ${agent}${model ? ` (${model})` : ""} thread${project ? ` in ${project.name}` : ""} gets: ${result.included.join(", ") || "none"}`,
                 `Withheld: ${result.excluded.join(", ") || "none"}`,
               ].join("\n"),
             );

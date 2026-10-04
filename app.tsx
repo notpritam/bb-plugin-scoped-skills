@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { definePluginApp, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
-import type { Agent, rpcContract, SkillSummary } from "./server";
+import type { Agent, Project, rpcContract, SkillSummary } from "./server";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ function useLibrary() {
   const rpc = useRpc<typeof rpcContract>();
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const report = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause));
@@ -24,6 +25,7 @@ function useLibrary() {
     rpc.call("library_list").then((result) => {
       setSkills(result.skills);
       setAgents(result.agents);
+      setProjects(result.projects);
       setError(null);
     }, report);
   }, [rpc, report]);
@@ -31,7 +33,7 @@ function useLibrary() {
     refetch();
   }, [refetch]);
   useRealtime("library-changed", refetch);
-  return { rpc, skills, agents, error, report, setError, refetch };
+  return { rpc, skills, agents, projects, error, report, setError, refetch };
 }
 
 const splitGlobs = (text: string) =>
@@ -103,22 +105,26 @@ function SkillCard({
   skill: SkillSummary;
   agents: Agent[];
   included: boolean;
-  onScope: (agents: string[] | null, models: string[] | null) => Promise<void>;
+  onScope: (agents: string[] | null, models: string[] | null, projects: string[] | null) => Promise<void>;
   onRemove: () => void;
 }) {
-  const [models, setModels] = useState(skill.scope.models?.join(", ") ?? "");
+  const savedModels = skill.scope.models?.join(", ") ?? "";
+  const savedProjects = skill.scope.projects?.join(", ") ?? "";
+  const [models, setModels] = useState(savedModels);
+  const [projectGlobs, setProjectGlobs] = useState(savedProjects);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  useEffect(() => setModels(skill.scope.models?.join(", ") ?? ""), [skill.scope.models]);
-  const save = async (nextAgents: string[] | null, nextModels: string[] | null) => {
+  useEffect(() => setModels(savedModels), [savedModels]);
+  useEffect(() => setProjectGlobs(savedProjects), [savedProjects]);
+  const save = async (nextAgents: string[] | null, nextModels: string[] | null, nextProjects: string[] | null) => {
     setBusy(true);
     try {
-      await onScope(nextAgents, nextModels);
+      await onScope(nextAgents, nextModels, nextProjects);
     } finally {
       setBusy(false);
     }
   };
-  const savedModels = skill.scope.models?.join(", ") ?? "";
+  const orNull = (list: string[]) => (list.length === 0 ? null : list);
   return (
     <li className={cn("space-y-3 px-4 py-3.5", !included && "bg-muted/40")}>
       <div className="flex items-start gap-3">
@@ -157,23 +163,41 @@ function SkillCard({
           </Button>
         )}
       </div>
-      <AgentChips agents={agents} value={skill.scope.agents} disabled={busy} onChange={(next) => save(next, skill.scope.models)} />
+      <AgentChips
+        agents={agents}
+        value={skill.scope.agents}
+        disabled={busy}
+        onChange={(next) => save(next, skill.scope.models, skill.scope.projects)}
+      />
       <form
-        className="flex items-center gap-2"
+        className="flex items-start gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          const next = splitGlobs(models);
-          void save(skill.scope.agents, next.length === 0 ? null : next);
+          void save(skill.scope.agents, orNull(splitGlobs(models)), orNull(splitGlobs(projectGlobs)));
         }}
       >
-        <Input
-          value={models}
-          onChange={(event) => setModels(event.target.value)}
-          placeholder="Any model — or globs like gpt-5*, claude-opus-*"
-          aria-label={`Models for ${skill.name}`}
-          className="h-8 text-xs"
-        />
-        <Button type="submit" size="sm" variant="secondary" disabled={busy || models.trim() === savedModels}>
+        <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+          <Input
+            value={models}
+            onChange={(event) => setModels(event.target.value)}
+            placeholder="Any model — or gpt-5*, claude-opus-*"
+            aria-label={`Models for ${skill.name}`}
+            className="h-8 text-xs"
+          />
+          <Input
+            value={projectGlobs}
+            onChange={(event) => setProjectGlobs(event.target.value)}
+            placeholder="Any project — or names, *org/* remotes"
+            aria-label={`Projects for ${skill.name}`}
+            className="h-8 text-xs"
+          />
+        </div>
+        <Button
+          type="submit"
+          size="sm"
+          variant="secondary"
+          disabled={busy || (models.trim() === savedModels && projectGlobs.trim() === savedProjects)}
+        >
           Save
         </Button>
       </form>
@@ -198,9 +222,10 @@ function Section({ title, children, hint }: { title: string; hint?: ReactNode; c
 }
 
 function ScopedSkillsPage() {
-  const { rpc, skills, agents, error, report, setError, refetch } = useLibrary();
+  const { rpc, skills, agents, projects, error, report, setError, refetch } = useLibrary();
   const [previewAgent, setPreviewAgent] = useState<string | null>(null);
   const [previewModel, setPreviewModel] = useState("");
+  const [previewProject, setPreviewProject] = useState<string | null>(null);
   const [included, setIncluded] = useState<Set<string> | null>(null);
   const [importPath, setImportPath] = useState("");
   const [importAgents, setImportAgents] = useState<string[] | null>(null);
@@ -209,17 +234,22 @@ function ScopedSkillsPage() {
   const agentId = previewAgent ?? agents[0]?.id ?? null;
   useEffect(() => {
     if (agentId === null) return;
-    rpc.call("library_preview", { agent: agentId, model: previewModel.trim() }).then(
+    rpc.call("library_preview", { agent: agentId, model: previewModel.trim(), project: previewProject }).then(
       (result) => setIncluded(new Set(result.included)),
       report,
     );
-  }, [rpc, report, agentId, previewModel, skills]);
+  }, [rpc, report, agentId, previewModel, previewProject, skills]);
 
   const agentName = useMemo(() => agents.find((agent) => agent.id === agentId)?.name ?? agentId, [agents, agentId]);
 
-  const setScope = async (name: string, nextAgents: string[] | null, nextModels: string[] | null) => {
+  const setScope = async (
+    name: string,
+    nextAgents: string[] | null,
+    nextModels: string[] | null,
+    nextProjects: string[] | null,
+  ) => {
     try {
-      await rpc.call("library_set_scope", { name, agents: nextAgents, models: nextModels });
+      await rpc.call("library_set_scope", { name, agents: nextAgents, models: nextModels, projects: nextProjects });
       refetch();
     } catch (cause) {
       report(cause);
@@ -232,7 +262,13 @@ function ScopedSkillsPage() {
     setImporting(true);
     setError(null);
     try {
-      await rpc.call("library_import", { path: importPath.trim(), agents: importAgents, models: null, replace: false });
+      await rpc.call("library_import", {
+        path: importPath.trim(),
+        agents: importAgents,
+        models: null,
+        projects: null,
+        replace: false,
+      });
       setImportPath("");
       refetch();
     } catch (cause) {
@@ -282,13 +318,28 @@ function ScopedSkillsPage() {
                 </button>
               ))}
             </div>
-            <Input
-              value={previewModel}
-              onChange={(event) => setPreviewModel(event.target.value)}
-              placeholder="Model (optional), e.g. gpt-5.5 or claude-opus-5-5"
-              aria-label="Preview model"
-              className="h-8 text-xs"
-            />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input
+                value={previewModel}
+                onChange={(event) => setPreviewModel(event.target.value)}
+                placeholder="Model (optional), e.g. gpt-5.5 or claude-opus-5-5"
+                aria-label="Preview model"
+                className="h-8 text-xs"
+              />
+              <select
+                value={previewProject ?? ""}
+                onChange={(event) => setPreviewProject(event.target.value === "" ? null : event.target.value)}
+                aria-label="Preview project"
+                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs text-foreground"
+              >
+                <option value="">Any project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </Section>
 
@@ -308,7 +359,7 @@ function ScopedSkillsPage() {
                   skill={skill}
                   agents={agents}
                   included={included?.has(skill.name) ?? true}
-                  onScope={(nextAgents, nextModels) => setScope(skill.name, nextAgents, nextModels)}
+                  onScope={(nextAgents, nextModels, nextProjects) => setScope(skill.name, nextAgents, nextModels, nextProjects)}
                   onRemove={() => {
                     rpc.call("library_remove", { name: skill.name }).then(refetch, report);
                   }}

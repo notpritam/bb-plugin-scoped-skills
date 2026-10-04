@@ -41,13 +41,23 @@ export interface SkillFile {
 }
 
 /**
- * Who receives a skill. `agents` and `models` are each either null (no
- * restriction) or a non-empty list. Model entries are case-insensitive
- * globs where `*` matches any run of characters.
+ * Who receives a skill. Each field is either null (no restriction) or a
+ * non-empty list. Model and project entries are case-insensitive globs where
+ * `*` matches any run of characters; a project entry matches the project's
+ * id, name, or git remote URL (e.g. `*emergentbase/*` covers every repo of
+ * one GitHub org).
  */
 export interface Scope {
   agents: string[] | null;
   models: string[] | null;
+  projects: string[] | null;
+}
+
+/** The parts of a BB project a project glob can match. */
+export interface ProjectRef {
+  id: string;
+  name: string;
+  gitRemoteUrl: string | null;
 }
 
 export interface ParsedSkill {
@@ -155,11 +165,20 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${escaped}$`, "i");
 }
 
-/** Does a thread running `agent` with `model` receive a skill with `scope`? */
-export function scopeMatches(scope: Scope, agent: string, model: string): boolean {
+/**
+ * Does a thread running `agent` with `model`, in `project`, receive a skill
+ * with `scope`? A project-scoped skill never matches when the project is
+ * unknown.
+ */
+export function scopeMatches(scope: Scope, agent: string, model: string, project: ProjectRef | null = null): boolean {
   if (scope.agents !== null && !scope.agents.includes(agent)) return false;
   if (scope.models !== null && !scope.models.some((pattern) => globToRegExp(pattern).test(model))) {
     return false;
+  }
+  if (scope.projects !== null) {
+    if (project === null) return false;
+    const candidates = [project.id, project.name, project.gitRemoteUrl].filter((v): v is string => Boolean(v));
+    if (!scope.projects.some((pattern) => candidates.some((value) => globToRegExp(pattern).test(value)))) return false;
   }
   return true;
 }
@@ -169,7 +188,8 @@ export function describeScope(scope: Scope, agentNames: ReadonlyMap<string, stri
   const agents =
     scope.agents === null ? "every agent" : scope.agents.map((id) => agentNames.get(id) ?? id).join(", ");
   const models = scope.models === null ? "" : `, models ${scope.models.join(", ")}`;
-  return `${agents}${models}`;
+  const projects = scope.projects === null ? "" : `, projects ${scope.projects.join(", ")}`;
+  return `${agents}${models}${projects}`;
 }
 
 /**

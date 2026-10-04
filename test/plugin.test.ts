@@ -85,3 +85,24 @@ test("the list tool reports scopes", async () => {
   const result = await harness.behavior.callAgentTool("scoped_skills_list", {});
   assert.match(JSON.stringify(result), /everywhere/);
 });
+
+test("project-scoped skills reach only threads in matching projects", async () => {
+  const harness = await load();
+  const imported = await harness.behavior.runCli([
+    "import", makeSkill("everywhere"), "--agents", "all", "--projects", "*emergentbase/*,work",
+  ]);
+  assert.equal(imported.exitCode, 0);
+  const inProject = (project: { id: string; name: string; gitRemoteUrl: string | null }) =>
+    harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        provider: { id: "codex", model: "gpt-5.5", capabilities: { supportsNativeUserQuestion: false } },
+        project: { ...project, kind: "standard" },
+      }),
+    );
+  const mono = await inProject({ id: "proj_1", name: "mono", gitRemoteUrl: "git@github.com:emergentbase/mono.git" });
+  assert.ok(mono.skills.includes("everywhere"));
+  const personal = await inProject({ id: "proj_2", name: "personae", gitRemoteUrl: "git@github.com:notpritam/personae.git" });
+  assert.equal(personal.skills.includes("everywhere"), false);
+  const workFolder = await inProject({ id: "proj_3", name: "work", gitRemoteUrl: null });
+  assert.ok(workFolder.skills.includes("everywhere"));
+});

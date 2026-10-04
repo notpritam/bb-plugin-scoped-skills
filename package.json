@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-scoped-skills",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "bb": ">=0.43",
@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Scoped Skills",
-    "description": "Give each skill only to the agents that can use it. Keep image-generation skills out of Claude threads, model-specific prompts out of the wrong model, and manage it all from one page, a CLI, or by asking an agent.",
+    "description": "Give each skill only to the agents, models and projects that should have it. Keep image-generation skills out of Claude threads, model-specific prompts away from the wrong model, and work skills out of personal projects. Manage it from one page, a CLI, or by asking an agent.",
     "branding": {
       "icon": "./assets/icon.svg"
     },
@@ -53,7 +53,7 @@
     "typescript": "^5.7.0",
     "vaul": "^1.1.2"
   },
-  "description": "Give each skill only to the agents and models that can use it.",
+  "description": "Give each skill only to the agents, models and projects that should have it.",
   "scripts": {
     "typecheck": "tsc -p .",
     "test": "node --test test/*.test.ts",

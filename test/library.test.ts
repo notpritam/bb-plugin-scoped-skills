@@ -65,13 +65,13 @@ test("normalizeList treats 'all' and empty as no restriction", () => {
 });
 
 test("scopeMatches checks agents and model globs", () => {
-  const codexOnly = { agents: ["codex"], models: null };
+  const codexOnly = { agents: ["codex"], models: null, projects: null };
   assert.equal(scopeMatches(codexOnly, "codex", "gpt-5.5"), true);
   assert.equal(scopeMatches(codexOnly, "claude-code", "claude-opus-5-5"), false);
-  const gpt5 = { agents: null, models: ["gpt-5*"] };
+  const gpt5 = { agents: null, models: ["gpt-5*"], projects: null };
   assert.equal(scopeMatches(gpt5, "codex", "GPT-5.5-codex"), true);
   assert.equal(scopeMatches(gpt5, "codex", "o4-mini"), false);
-  assert.equal(scopeMatches({ agents: null, models: null }, "anything", ""), true);
+  assert.equal(scopeMatches({ agents: null, models: null, projects: null }, "anything", ""), true);
 });
 
 test("materializeLibrary replaces the library with exactly the given skills", () => {
@@ -84,4 +84,16 @@ test("materializeLibrary replaces the library with exactly the given skills", ()
   materializeLibrary(libraryDir, [second]);
   assert.equal(existsSync(path.join(libraryDir, "one")), false);
   assert.match(readFileSync(path.join(libraryDir, "two", "SKILL.md"), "utf8"), /name: two/);
+});
+
+test("scopeMatches checks project globs against id, name and git remote", () => {
+  const work = { agents: null, models: null, projects: ["*emergentbase/*", "work"] };
+  const mono = { id: "proj_1", name: "mono", gitRemoteUrl: "git@github.com:emergentbase/mono.git" };
+  const workFolder = { id: "proj_2", name: "work", gitRemoteUrl: null };
+  const personal = { id: "proj_3", name: "personae", gitRemoteUrl: "git@github.com:notpritam/personae.git" };
+  assert.equal(scopeMatches(work, "codex", "gpt-5.5", mono), true);
+  assert.equal(scopeMatches(work, "codex", "gpt-5.5", workFolder), true);
+  assert.equal(scopeMatches(work, "codex", "gpt-5.5", personal), false);
+  assert.equal(scopeMatches(work, "codex", "gpt-5.5", null), false);
+  assert.equal(scopeMatches({ agents: null, models: null, projects: ["proj_3"] }, "codex", "", personal), true);
 });

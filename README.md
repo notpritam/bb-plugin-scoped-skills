@@ -1,6 +1,6 @@
 # Scoped Skills
 
-Give each BB skill only to the agents (and models) that can use it.
+Give each BB skill only to the agents, models and projects that should have it.
 
 BB hands every skill in `~/.bb/skills` to every thread, whatever agent runs it.
 That breaks down once your agents differ: an image-generation skill is useless
@@ -14,7 +14,7 @@ model.
 ## Install
 
 ```sh
-bb plugin install git:github.com/notpritam/bb-plugin-scoped-skills@^0.1.0
+bb plugin install git:github.com/notpritam/bb-plugin-scoped-skills@^0.2.0
 ```
 
 Or add the [notpritam marketplace](https://github.com/notpritam/bb-marketplace)
@@ -32,7 +32,8 @@ folders.
 bb scoped-skills agents                                   # agent ids: codex, claude-code, …
 bb scoped-skills import ~/.claude/skills/brandkit --agents codex
 bb scoped-skills scope brandkit --agents codex,claude-code --models 'gpt-5*'
-bb scoped-skills preview --agent claude-code --model claude-opus-5-5
+bb scoped-skills scope sync-token --agents all --projects '*emergentbase/*,work'
+bb scoped-skills preview --agent claude-code --model claude-opus-5-5 --project mono
 bb scoped-skills list
 bb scoped-skills remove brandkit
 ```
@@ -76,6 +77,8 @@ thread starts ──► BB asks plugins: "agent = codex, model = gpt-5.5 — whi
   `~/.codex/skills` still reach every agent. Remove them after importing.
 - A thread's model is matched as BB reports it. Use globs (`gpt-5*`) rather
   than exact version strings.
+- A project glob matches the project's id, name or git remote URL. A thread
+  with no matching project never receives a project-scoped skill.
 
 ## Develop
 
