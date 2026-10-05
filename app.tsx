@@ -626,7 +626,9 @@ function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      {/* Translucent themes (e.g. Transparency) show the page through the
+          dialog; blurring it keeps the form legible on any theme. */}
+      <DialogContent className="backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle>Import a skill</DialogTitle>
           <DialogDescription>

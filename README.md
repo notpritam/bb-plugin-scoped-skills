@@ -9,7 +9,7 @@ mislead another. Scoped Skills keeps a library in which every skill carries a
 scope, and gives a thread only the skills whose scope matches its agent and
 model.
 
-![Scoped Skills previewing a Codex thread on o4-mini in FoundKeep: an agent-scoped and a project-scoped skill included, a GPT-5-only demo skill withheld](docs/screenshots/library-codex.webp)
+![The library previewed as a Codex thread on o4-mini in FoundKeep: five skills included, a GPT-5-only demo skill withheld](docs/screenshots/library.webp)
 
 ## Install
 
@@ -22,9 +22,13 @@ and install `scoped-skills@notpritam`.
 
 ## Use
 
-**Page.** Open **Scoped Skills** in the sidebar. Toggle agents per skill, add
-model globs, preview what a given agent/model receives, and import skill
-folders.
+**Page.** Open **Scoped Skills** in the sidebar. The library lists every
+skill with its scope as badges; **Preview** shows which skills a thread on a
+given agent, model and project would get. Click a skill to change who gets it
+(agents, model globs, project globs with a live "matches N projects" readout)
+and read its SKILL.md. **Import skill** copies a skill folder in.
+
+![A skill's page: agents, models, and projects with a live match readout, plus the rendered SKILL.md](docs/screenshots/skill-page.webp)
 
 **CLI.**
 
