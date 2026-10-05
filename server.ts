@@ -83,6 +83,14 @@ export const rpcContract = defineRpcContract({
     }),
     output: skillSummarySchema,
   },
+  library_get: {
+    input: z.object({ name: z.string() }),
+    output: z.object({
+      skill: skillSummarySchema,
+      skillMd: z.string(),
+      files: z.array(z.object({ path: z.string(), bytes: z.number() })),
+    }),
+  },
   library_remove: {
     input: z.object({ name: z.string() }),
     output: z.object({ removed: z.boolean() }),
@@ -336,6 +344,16 @@ export default async function plugin(bb: BbPluginApi) {
     }),
     library_set_scope: ({ name, agents, models, projects }) => setScope(name, agents, models, projects),
     library_import: (input) => importSkill(input),
+    library_get: ({ name }) => {
+      const skill = summarize(getRow(name));
+      const files = db
+        .prepare(`SELECT path, LENGTH(content) AS bytes FROM skill_files WHERE skill = ? ORDER BY path`)
+        .all(name) as Array<{ path: string; bytes: number }>;
+      const md = db.prepare(`SELECT content FROM skill_files WHERE skill = ? AND path = 'SKILL.md'`).get(name) as
+        | { content: Buffer }
+        | undefined;
+      return { skill, skillMd: md ? Buffer.from(md.content).toString("utf8") : "", files };
+    },
     library_remove: ({ name }) => ({ removed: removeSkill(name) }),
     library_preview: async ({ agent, model, project }) => {
       const ref = project === null ? null : ((await listProjects()).find((p) => p.id === project) ?? null);
