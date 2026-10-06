@@ -13,12 +13,15 @@ model and project.
 
 ## Install
 
+Scoped Skills is in **BB Community**: open **Extensions** in BB, search
+**Scoped Skills**, and install the listing by Pritam Sharma. Or from a terminal:
+
 ```sh
-bb plugin install git:github.com/notpritam/bb-plugin-scoped-skills@^0.2.0
+bb plugin install scoped-skills@bb-community
 ```
 
-Or add the [notpritam marketplace](https://github.com/notpritam/bb-marketplace)
-and install `scoped-skills@notpritam`.
+Straight from GitHub works too:
+`bb plugin install git:github.com/notpritam/bb-plugin-scoped-skills@^0.2.0`.
 
 ## Use
 
