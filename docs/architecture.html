@@ -45,19 +45,19 @@
 <body>
 <div class="frame" id="diagram">
   <h1>How a BB thread gets its skills with Scoped Skills</h1>
-  <p class="sub">Everything in <span class="mono">~/.bb/skills</span> goes to every thread. Scoped skills go only where their scope matches.</p>
+  <p class="sub">Everything in <span class="mono">~/.bb/skills</span> goes to every thread. Scoped skills go only to the agents, models and projects their scope names.</p>
 
   <div class="grid">
     <div class="box">
       <h3>1 · A thread starts</h3>
-      <div class="thread"><span class="dot claude"></span><div><div>Claude Code</div><div class="muted mono">claude-opus-5-5</div></div></div>
-      <div class="thread"><span class="dot"></span><div><div>Codex</div><div class="muted mono">gpt-5.5</div></div></div>
+      <div class="thread"><span class="dot claude"></span><div><div>Claude Code</div><div class="muted mono">claude-opus-5-5</div><div class="muted">in personae</div></div></div>
+      <div class="thread"><span class="dot"></span><div><div>Codex</div><div class="muted mono">gpt-5.5</div><div class="muted">in FoundKeep</div></div></div>
     </div>
     <div class="arrow"></div>
     <div class="box core">
       <h3>2 · BB resolves the session</h3>
       <div>For each thread, BB asks every plugin which of <em>its</em> skills to inject.</div>
-      <div class="call mono">bb.agents.configure(ctx)<br><span class="muted">ctx.provider.id · ctx.provider.model</span></div>
+      <div class="call mono">bb.agents.configure(ctx)<br><span class="muted">ctx.provider.id · ctx.provider.model<br>ctx.project</span></div>
     </div>
     <div class="arrow"></div>
     <div class="box">
@@ -67,6 +67,8 @@
       <div class="lib-row"><div><div class="mono">imagegen-frontend-web</div><div class="scope">agents: codex</div></div>
         <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
       <div class="lib-row"><div><div class="mono">gpt5-prompting</div><div class="scope">models: gpt-5*</div></div>
+        <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
+      <div class="lib-row"><div><div class="mono">foundkeep-conventions</div><div class="scope">projects: *notpritam/foundkeep*</div></div>
         <div class="verdicts"><span class="v no">Claude</span><span class="v ok">Codex</span></div></div>
       <div class="lib-row"><div><div class="mono">scoped-skills</div><div class="scope">guide · every agent</div></div>
         <div class="verdicts"><span class="v ok">Claude</span><span class="v ok">Codex</span></div></div>
@@ -85,7 +87,7 @@
       <h4><span class="dot"></span>Codex session receives</h4>
       <div class="pills">
         <span class="pill">local-video-edit</span><span class="pill">hyperframes</span><span class="pill">…every ~/.bb skill</span>
-        <span class="pill scoped">scoped-skills</span><span class="pill scoped">brandkit</span><span class="pill scoped">imagegen-frontend-web</span><span class="pill scoped">gpt5-prompting</span>
+        <span class="pill scoped">scoped-skills</span><span class="pill scoped">brandkit</span><span class="pill scoped">imagegen-frontend-web</span><span class="pill scoped">gpt5-prompting</span><span class="pill scoped">foundkeep-conventions</span>
       </div>
     </div>
   </div>

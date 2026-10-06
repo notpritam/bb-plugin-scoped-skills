@@ -1,6 +1,6 @@
-// Pure library logic for Scoped Skills: reading a skill folder, validating its
-// frontmatter, matching a scope against a thread's agent and model, and
-// writing the materialized library that BB scans as a manifest skill root.
+// Library logic for Scoped Skills: reading a skill folder, validating its
+// frontmatter, and writing the materialized library that BB scans as a
+// manifest skill root. Scope matching lives in scope.ts (re-exported here).
 // Nothing here touches the BB plugin API, so it is unit-testable on its own.
 import {
   existsSync,

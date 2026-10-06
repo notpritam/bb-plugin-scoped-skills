@@ -2,8 +2,8 @@
 //
 // BB gives every skill in ~/.bb/skills to every thread. This plugin keeps a
 // library of skills that each carry a scope (which agents, optionally which
-// models) and, through bb.agents.configure, hands a thread only the skills
-// whose scope matches the thread's agent and model.
+// models and projects) and, through bb.agents.configure, hands a thread only
+// the skills whose scope matches the thread's agent, model and project.
 //
 // Storage: the plugin database is the source of truth (skills, files,
 // scopes). On load and after every change the library is written to

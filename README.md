@@ -6,8 +6,8 @@ BB hands every skill in `~/.bb/skills` to every thread, whatever agent runs it.
 That breaks down once your agents differ: an image-generation skill is useless
 in Claude Code, which has no image tool, and a prompt tuned for one model can
 mislead another. Scoped Skills keeps a library in which every skill carries a
-scope, and gives a thread only the skills whose scope matches its agent and
-model.
+scope, and gives a thread only the skills whose scope matches its agent,
+model and project.
 
 ![The library previewed as a Codex thread on o4-mini in FoundKeep: five skills included, a GPT-5-only demo skill withheld](docs/screenshots/library.webp)
 
@@ -51,21 +51,23 @@ a thread to check or change a scope.
 ![How a thread gets its skills with Scoped Skills](docs/architecture.webp)
 
 ```
-thread starts ──► BB asks plugins: "agent = codex, model = gpt-5.5 — which skills?"
+thread starts ──► BB asks plugins: "agent = codex, model = gpt-5.5,
+                     project = FoundKeep — which skills?"
                      │
                      ▼
         Scoped Skills checks each skill's scope
-        brandkit        agents: codex           ✓ included
-        gpt-tuning      models: gpt-5*          ✓ included
-        claude-only     agents: claude-code     ✗ withheld
+        brandkit        agents: codex                     ✓ included
+        gpt-tuning      models: gpt-5*                    ✓ included
+        house-rules     projects: *notpritam/foundkeep*   ✓ included
+        claude-only     agents: claude-code               ✗ withheld
                      │
                      ▼
         BB injects only the included skills into the session
 ```
 
 - The plugin registers `bb.agents.configure`. For each thread, BB passes the
-  agent id and model, and the plugin returns the skill names to inject. BB
-  injects none of the plugin's other skills.
+  agent id, model and project, and the plugin returns the skill names to
+  inject. BB injects none of the plugin's other skills.
 - The source of truth is the plugin's SQLite database (skills, files and
   scopes). On load and after every change it writes `library/`, a manifest
   skill root, so a plugin update that replaces the plugin folder never loses
